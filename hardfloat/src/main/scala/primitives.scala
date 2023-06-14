@@ -47,6 +47,7 @@ object lowMask
     def apply(in: UInt, topBound: BigInt, bottomBound: BigInt): UInt =
     {
         require(topBound != bottomBound)
+        //
         val numInVals = BigInt(1)<<in.getWidth
         if (topBound < bottomBound) {
             lowMask(~in, numInVals - 1 - topBound, numInVals - 1 - bottomBound)
@@ -63,7 +64,7 @@ object lowMask
                         lowMask(lsbs, topBound - mid, bottomBound - mid),
                         0.U
                     )
-                } else {
+                } else {// split
                     Mux(msb,
                         lowMask(lsbs, topBound - mid, 0) ## ((BigInt(1)<<(mid - bottomBound).toInt) - 1).U,
                         lowMask(lsbs, mid, bottomBound)

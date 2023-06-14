@@ -43,6 +43,7 @@ object recFNFromFN
 {
     def apply(expWidth: Int, sigWidth: Int, in: Bits) =
     {
+        // width = 1 + 3 + 3 + 10
         val rawIn = rawFloatFromFN(expWidth, sigWidth, in)
         rawIn.sign ##
           (Mux(rawIn.isZero, 0.U(3.W), rawIn.sExp(expWidth, expWidth - 2)) |

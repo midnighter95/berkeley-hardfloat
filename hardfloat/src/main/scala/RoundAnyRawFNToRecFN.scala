@@ -44,6 +44,14 @@ import consts._
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
 
+/**
+  *
+  *
+  * @param inSigWidth sig + 2
+  * @param outSigWidth sig
+  *
+  *
+  */
 class
     RoundAnyRawFNToRecFN(
         inExpWidth: Int,
@@ -67,7 +75,9 @@ class
 
     //------------------------------------------------------------------------
     //------------------------------------------------------------------------
+    // false when option = 0
     val sigMSBitAlwaysZero = ((options & flRoundOpt_sigMSBitAlwaysZero) != 0)
+    /** todo */
     val effectiveInSigWidth =
         if (sigMSBitAlwaysZero) inSigWidth else inSigWidth + 1
     val neverUnderflows =
@@ -81,7 +91,9 @@ class
     val outNaNExp = BigInt(7)<<(outExpWidth - 2)
     val outInfExp = BigInt(6)<<(outExpWidth - 2)
     val outMaxFiniteExp = outInfExp - 1
+    /** 18 */
     val outMinNormExp = (BigInt(1)<<(outExpWidth - 1)) + 2
+    /** 8 */
     val outMinNonzeroExp = outMinNormExp - outSigWidth + 1
 
     //------------------------------------------------------------------------
@@ -108,6 +120,7 @@ class
         else
             io.in.sExp +&
                 ((BigInt(1)<<outExpWidth) - (BigInt(1)<<inExpWidth)).S
+    // width = sig + 3
     val adjustedSig =
         if (inSigWidth <= outSigWidth + 2)
             io.in.sig<<(outSigWidth - inSigWidth + 2)
@@ -115,6 +128,7 @@ class
             (io.in.sig(inSigWidth, inSigWidth - outSigWidth - 1) ##
                 io.in.sig(inSigWidth - outSigWidth - 2, 0).orR
             )
+    // MSB in adjustedSig
     val doShiftSigDown1 =
         if (sigMSBitAlwaysZero) false.B else adjustedSig(outSigWidth + 2)
 
@@ -143,7 +157,7 @@ class
         common_underflow      := false.B
         common_inexact        := false.B
 
-    } else {
+    } else { // normal case
 
         //--------------------------------------------------------------------
         //--------------------------------------------------------------------
@@ -152,7 +166,7 @@ class
                 0.U(outSigWidth.W) ## doShiftSigDown1 ## 3.U(2.W)
             else
                 (lowMask(
-                        sAdjustedExp(outExpWidth, 0),
+                        sAdjustedExp(outExpWidth, 0), // leave the first bit
                         outMinNormExp - outSigWidth - 1,
                         outMinNormExp
                     ) | doShiftSigDown1) ##

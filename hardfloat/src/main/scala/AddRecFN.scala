@@ -44,6 +44,12 @@ import consts._
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
+/**
+  *
+  * close: sub
+  * far : add
+  *
+  * */
 class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
 {
     val io = IO(new Bundle {
@@ -52,23 +58,32 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
         val b = Input(new RawFloat(expWidth, sigWidth))
         val roundingMode = Input(UInt(3.W))
         val invalidExc = Output(Bool())
+        /** sig width = sig + 3 */
         val rawOut = Output(new RawFloat(expWidth, sigWidth + 2))
     })
 
+    // 11bits => 4
     val alignDistWidth = log2Ceil(sigWidth)
 
     val effSignB = io.b.sign ^ io.subOp
     val eqSigns = io.a.sign === effSignB
     val notEqSigns_signZero = io.roundingMode === round_min
+    // todo: optomisize it, chop the first 2 bits
     val sDiffExps = io.a.sExp - io.b.sExp
     val modNatAlignDist = Mux(sDiffExps < 0.S, io.b.sExp - io.a.sExp, sDiffExps)(alignDistWidth - 1, 0)
     val isMaxAlign =
         (sDiffExps>>alignDistWidth) =/= 0.S &&
             ((sDiffExps>>alignDistWidth) =/= -1.S || sDiffExps(alignDistWidth - 1, 0) === 0.U)
+    // maxAlign = 15
     val alignDist = Mux(isMaxAlign, ((BigInt(1)<<alignDistWidth) - 1).U, modNatAlignDist)
     val closeSubMags = !eqSigns && !isMaxAlign && (modNatAlignDist <= 1.U)
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
+
+    /** Alignment
+      * diff = -1,0,1 => a << 0,1,2
+      * b << 1
+      */
     val close_alignedSigA =
         Mux((0.S <= sDiffExps) &&  sDiffExps(0), io.a.sig<<2, 0.U) |
         Mux((0.S <= sDiffExps) && !sDiffExps(0), io.a.sig<<1, 0.U) |
@@ -85,17 +100,49 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
     val far_signOut = Mux(sDiffExps < 0.S, effSignB, io.a.sign)
+    /** SWAP
+      *
+      * containing the hidden 1
+      * width = sigWiden
+      * */
     val far_sigLarger  = Mux(sDiffExps < 0.S, io.b.sig, io.a.sig)(sigWidth - 1, 0)
     val far_sigSmaller = Mux(sDiffExps < 0.S, io.a.sig, io.b.sig)(sigWidth - 1, 0)
+    /** @note why shift 5: 5 = 2 + 3, 2 for Guard and Round bit, 3 for the last 3 bit to collapse to Sticky bit
+      * chop happens when alignDist > 5, theses chopped bits will be taken into account in mask when calculating Sticky bit
+      *
+      * width = sigWidth + 5 - alignDist
+      */
     val far_mainAlignedSigSmaller = (far_sigSmaller<<5)>>alignDist
+    // calculate sticky bit during PreShift
+    /** @note why <<2 : 2 to bypass gurand bit and round bit */
     val far_reduced4SigSmaller = orReduceBy4(far_sigSmaller<<2)
     val far_roundExtraMask = lowMask(alignDist(alignDistWidth - 1, 2), (sigWidth + 5)/4, 0)
+    /** calculate Sticky bit
+      *
+      * Width = sigWidth + 3 - alignDist
+      */
     val far_alignedSigSmaller =
         Cat(far_mainAlignedSigSmaller>>3,
             far_mainAlignedSigSmaller(2, 0).orR || (far_reduced4SigSmaller & far_roundExtraMask).orR)
     val far_subMags = !eqSigns
+    /** when op=sub, then alignDist >= 2 here, the width of far_alignedSigSmaller <= sig +1
+      *
+      * max width = sigWidth + 3
+      */
     val far_negAlignedSigSmaller = Mux(far_subMags, Cat(1.U, ~far_alignedSigSmaller), far_alignedSigSmaller)
+    /** Adder width = sigWidth + 3 */
     val far_sigSum = (far_sigLarger<<3) + far_negAlignedSigSmaller + far_subMags
+    /** todo: why? Normalization?
+      *
+      * far_sub: Zexp - 1
+      * far_add: Zsum >> 1
+      * any idea?
+      *
+      * >>1 and set bit[0], to set S = R | S?
+      * for set MSB always zero?
+      *
+      * width = sig + 3
+      */
     val far_sigOut = Mux(far_subMags, far_sigSum, (far_sigSum>>1) | far_sigSum(0))(sigWidth + 2, 0)
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
@@ -112,6 +159,7 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
         (!notNaN_specialCase && closeSubMags && !close_totalCancellation
                                      && close_notTotalCancellation_signOut) ||
         (!notNaN_specialCase && !closeSubMags && far_signOut)
+    /** */
     val common_sExpOut =
         (Mux(closeSubMags || (sDiffExps < 0.S), io.b.sExp, io.a.sExp)
             - Mux(closeSubMags, close_nearNormDist, far_subMags).zext)
@@ -129,7 +177,10 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
-
+/**
+  *
+  * input 17 bits, why
+  * */
 class AddRecFN(expWidth: Int, sigWidth: Int) extends RawModule
 {
     val io = IO(new Bundle {

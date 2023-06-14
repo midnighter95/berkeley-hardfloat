@@ -39,6 +39,7 @@ package hardfloat
 
 import chisel3._
 
+/** transfer float in format to raw float*/
 object rawFloatFromFN {
   def apply(expWidth: Int, sigWidth: Int, in: Bits) = {
     val sign = in(expWidth + sigWidth - 1)
@@ -50,6 +51,8 @@ object rawFloatFromFN {
 
     val normDist = countLeadingZeros(fractIn)
     val subnormFract = (fractIn << normDist) (sigWidth - 3, 0) << 1
+    // raw exp = Exp - bias
+    // adder width = expWidth + 1
     val adjustedExp =
       Mux(isZeroExpIn,
         normDist ^ ((BigInt(1) << (expWidth + 1)) - 1).U,
@@ -66,6 +69,7 @@ object rawFloatFromFN {
     out.isZero := isZero
     out.sign := sign
     out.sExp := adjustedExp(expWidth, 0).zext
+    // MSB = 0, restore the hiden 1
     out.sig :=
       0.U(1.W) ## !isZero ## Mux(isZeroExpIn, subnormFract, fractIn)
     out
