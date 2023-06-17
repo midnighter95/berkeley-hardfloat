@@ -50,6 +50,8 @@ import consts._
   * @param inSigWidth sig + 2
   * @param outSigWidth sig
   *
+  * sig: input width = sig + 2, 2 for Guard bit and (R +S)
+  *
   *
   */
 class
@@ -80,11 +82,13 @@ class
     /** todo */
     val effectiveInSigWidth =
         if (sigMSBitAlwaysZero) inSigWidth else inSigWidth + 1
+    /** for low to high */
     val neverUnderflows =
         ((options &
               (flRoundOpt_neverUnderflows | flRoundOpt_subnormsAlwaysExact)
          ) != 0) ||
             (inExpWidth < outExpWidth)
+  /** for low to high */
     val neverOverflows =
         ((options & flRoundOpt_neverOverflows) != 0) ||
             (inExpWidth < outExpWidth)
@@ -115,20 +119,19 @@ class
             (io.in.sExp +&
                  ((BigInt(1)<<outExpWidth) - (BigInt(1)<<inExpWidth)).S
             )(outExpWidth, 0).zext
-        else if (inExpWidth == outExpWidth)
+        else if (inExpWidth == outExpWidth) // general case
             io.in.sExp
         else
             io.in.sExp +&
                 ((BigInt(1)<<outExpWidth) - (BigInt(1)<<inExpWidth)).S
-    // width = sig + 3
     val adjustedSig =
-        if (inSigWidth <= outSigWidth + 2)
+        if (inSigWidth <= outSigWidth + 2)// general case adjustedSig =  io.in.sig
             io.in.sig<<(outSigWidth - inSigWidth + 2)
         else
             (io.in.sig(inSigWidth, inSigWidth - outSigWidth - 1) ##
                 io.in.sig(inSigWidth - outSigWidth - 2, 0).orR
             )
-    // MSB in adjustedSig
+    /** sig msb */
     val doShiftSigDown1 =
         if (sigMSBitAlwaysZero) false.B else adjustedSig(outSigWidth + 2)
 
@@ -139,13 +142,14 @@ class
     val common_underflow      = Wire(Bool())
     val common_inexact        = Wire(Bool())
 
-    if (
+    if (// for f16 to f64
         neverOverflows && neverUnderflows
             && (effectiveInSigWidth <= outSigWidth)
     ) {
 
         //--------------------------------------------------------------------
         //--------------------------------------------------------------------
+      // sig msb = 1 means adder overflow , so exp + 1
         common_expOut := sAdjustedExp(outExpWidth, 0) + doShiftSigDown1
         common_fractOut :=
             Mux(doShiftSigDown1,
@@ -173,28 +177,41 @@ class
                   3.U(2.W)
 
         val shiftedRoundMask = 0.U(1.W) ## roundMask>>1
+        /** select the first bit need to be  rounded*/
         val roundPosMask = ~shiftedRoundMask & roundMask
+        /** need to add ulp or not */
         val roundPosBit = (adjustedSig & roundPosMask).orR
+        /** Any bits is one after guard bit */
         val anyRoundExtra = (adjustedSig & shiftedRoundMask).orR
+        /** Any bits is one containing guard bit */
         val anyRound = roundPosBit || anyRoundExtra
 
+        /** round increment */
         val roundIncr =
             ((roundingMode_near_even || roundingMode_near_maxMag) &&
                  roundPosBit) ||
                 (roundMagUp && anyRound)
+        /** width = sig +2
+          *
+          * when round mask = 0011  => xxxx
+          *                   0111  => xxx0
+          *
+          *
+          * */
         val roundedSig: Bits =
             Mux(roundIncr,
-                (((adjustedSig | roundMask)>>2) +& 1.U) &
-                    ~Mux(roundingMode_near_even && roundPosBit &&
+                (((adjustedSig | roundMask)>>2) +& 1.U) & // containing cases for mask = 0111 and 0011
+                    ~Mux(roundingMode_near_even && roundPosBit && // for round to even when 0.5 happens
                              ! anyRoundExtra,
                          roundMask>>1,
                          0.U((outSigWidth + 2).W)
                      ),
-                (adjustedSig & ~roundMask)>>2 |
+                (adjustedSig & ~roundMask)>>2 | // containing cases for mask = 0111 and 0011
                     Mux(roundingMode_odd && anyRound, roundPosMask>>1, 0.U)
             )
 //*** IF SIG WIDTH IS VERY NARROW, NEED TO ACCOUNT FOR ROUND-EVEN ZEROING
 //***  M.S. BIT OF SUBNORMAL SIG?
+        /** @todo (roundedSig>>outSigWidth) is just msb in adjustedSig? */
         val sRoundedExp = sAdjustedExp +& (roundedSig>>outSigWidth).asUInt.zext
 
         common_expOut := sRoundedExp(outExpWidth, 0)

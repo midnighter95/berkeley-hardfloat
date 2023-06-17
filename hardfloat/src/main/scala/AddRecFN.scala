@@ -81,7 +81,8 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
     *------------------------------------------------------------------------*/
 
     /** Alignment
-      * diff = -1,0,1 => a << 0,1,2
+      * diff = -1,0,1 =>
+      * a << 0,1,2
       * b << 1
       */
     val close_alignedSigA =
@@ -104,6 +105,7 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
       *
       * containing the hidden 1
       * width = sigWiden
+      * msb = 1
       * */
     val far_sigLarger  = Mux(sDiffExps < 0.S, io.b.sig, io.a.sig)(sigWidth - 1, 0)
     val far_sigSmaller = Mux(sDiffExps < 0.S, io.a.sig, io.b.sig)(sigWidth - 1, 0)
@@ -119,7 +121,10 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
     val far_roundExtraMask = lowMask(alignDist(alignDistWidth - 1, 2), (sigWidth + 5)/4, 0)
     /** calculate Sticky bit
       *
-      * Width = sigWidth + 3 - alignDist
+      *
+      *
+      * Width = sigWidth + 3
+      *
       */
     val far_alignedSigSmaller =
         Cat(far_mainAlignedSigSmaller>>3,
@@ -127,19 +132,32 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
     val far_subMags = !eqSigns
     /** when op=sub, then alignDist >= 2 here, the width of far_alignedSigSmaller <= sig +1
       *
-      * max width = sigWidth + 3
+      * width = sigWidth + 4
+      *
+      *
       */
     val far_negAlignedSigSmaller = Mux(far_subMags, Cat(1.U, ~far_alignedSigSmaller), far_alignedSigSmaller)
-    /** Adder width = sigWidth + 3 */
+    /** Adder width = sigWidth + 4
+      *
+      * far_sigLarger start with 1, so add width must be far_sigLarger + 3 + 1 , 1 for add zero in msb for sub
+      *
+      * @todo add far_subMags can merge with rounding + ulp
+      *
+      * last 4 bits pos are L G R S
+      */
     val far_sigSum = (far_sigLarger<<3) + far_negAlignedSigSmaller + far_subMags
-    /** todo: why? Normalization?
+    /** far_sigSum is one more bit for output, so >> 1 when add
       *
-      * far_sub: Zexp - 1
-      * far_add: Zsum >> 1
-      * any idea?
+      * @note it's not normalized, it contains overflow info in msb, last 2 bits is G and R|S
       *
-      * >>1 and set bit[0], to set S = R | S?
-      * for set MSB always zero?
+      * when add overflow, 11bits + L G R+S
+      * when add, not overflow, 0 + 11bits + G R+S
+      * when sub, 0 + 11Bits + R S
+      * or 11Bits + G R S
+      *
+      * overall rounding schems:
+      * if msb = 1, round 3
+      * if msb = 0, round 2
       *
       * width = sig + 3
       */
