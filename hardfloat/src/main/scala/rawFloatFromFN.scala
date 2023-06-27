@@ -44,6 +44,7 @@ object rawFloatFromFN {
   def apply(expWidth: Int, sigWidth: Int, in: Bits) = {
     val sign = in(expWidth + sigWidth - 1)
     val expIn = in(expWidth + sigWidth - 2, sigWidth - 1)
+    // 10 bits
     val fractIn = in(sigWidth - 2, 0)
 
     val isZeroExpIn = (expIn === 0.U)

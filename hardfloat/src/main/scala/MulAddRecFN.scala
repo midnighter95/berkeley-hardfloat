@@ -95,6 +95,7 @@ class MulAddRecFNToRaw_preMul(expWidth: Int, sigWidth: Int) extends RawModule
 
     val signProd = rawA.sign ^ rawB.sign ^ io.op(1)
 //*** REVIEW THE BIAS FOR 'sExpAlignedProd':
+    // todo: + -18.S?
     val sExpAlignedProd =
         rawA.sExp +& rawB.sExp + (-(BigInt(1)<<expWidth) + sigWidth + 3).S
 

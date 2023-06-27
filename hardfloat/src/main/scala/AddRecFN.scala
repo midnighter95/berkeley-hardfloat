@@ -116,7 +116,7 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
       */
     val far_mainAlignedSigSmaller = (far_sigSmaller<<5)>>alignDist
     // calculate sticky bit during PreShift
-    /** @note why <<2 : 2 to bypass gurand bit and round bit */
+    /** @note why <<2 : 2 to bypass guard bit and round bit */
     val far_reduced4SigSmaller = orReduceBy4(far_sigSmaller<<2)
     val far_roundExtraMask = lowMask(alignDist(alignDistWidth - 1, 2), (sigWidth + 5)/4, 0)
     /** calculate Sticky bit
@@ -124,7 +124,7 @@ class AddRawFN(expWidth: Int, sigWidth: Int) extends RawModule
       *
       *
       * Width = sigWidth + 3
-      *
+      * @note why 3: just alignment
       */
     val far_alignedSigSmaller =
         Cat(far_mainAlignedSigSmaller>>3,
